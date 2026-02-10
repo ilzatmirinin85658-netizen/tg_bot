@@ -15,13 +15,12 @@ SYSTEM_PROMPT = (
     'Верни JSON: {"score": int, "summary": str | null}'
 )
 
-MODEL_NAME = "gemini-1.5-flash-latest"
-
 
 class AIAnalyzer:
     def __init__(self) -> None:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
         self._models_logged = False
+        logger.info("AIAnalyzer initialized with model=%s", settings.GEMINI_MODEL)
 
     def _log_available_models(self) -> None:
         if self._models_logged:
@@ -37,10 +36,11 @@ class AIAnalyzer:
     async def analyze_text(self, title: str, text: str) -> dict:
         self._log_available_models()
 
+        model = settings.GEMINI_MODEL
         prompt = f"Заголовок: {title}\n\nТекст: {text}"
         try:
             response = await self.client.aio.models.generate_content(
-                model=MODEL_NAME,
+                model=model,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
@@ -52,5 +52,5 @@ class AIAnalyzer:
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             return json.loads(raw)
         except (json.JSONDecodeError, Exception) as exc:
-            logger.error("Gemini error (model=%s): %s", MODEL_NAME, exc)
+            logger.error("Gemini error (model=%s): %s", model, exc)
             return {"score": 0, "summary": None}
