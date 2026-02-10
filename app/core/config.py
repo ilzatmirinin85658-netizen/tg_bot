@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     DB_PASSWORD: str
     GEMINI_API_KEY: str
-    GEMINI_MODEL: str = "gemini-2.0-flash-lite"
+    GEMINI_MODEL: str = "models/gemini-2.5-flash"
 
 
 settings = Settings()

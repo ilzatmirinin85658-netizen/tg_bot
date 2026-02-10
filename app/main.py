@@ -32,7 +32,7 @@ scheduler = AsyncIOScheduler()
 
 async def scheduled_parse():
     """Periodic RSS parsing task."""
-    logger.info("Running scheduled RSS parse...")
+    logger.info("[Scheduler] \U0001f552 Запуск парсинга новостей...")
     try:
         saved = await fetch_and_process_rss(RSS_URL)
         logger.info("RSS parse done, saved %s articles", saved)
@@ -42,6 +42,7 @@ async def scheduled_parse():
 
 async def send_updates():
     """Send unsent articles to all registered users."""
+    logger.info("[Scheduler] \U0001f4e4 Запуск рассылки (проверка очереди)...")
     try:
         db = get_supabase_client()
 
@@ -100,6 +101,9 @@ async def lifespan(application: FastAPI):
     scheduler.add_job(send_updates, "interval", minutes=5, id="send_updates")
     scheduler.start()
     logger.info("Scheduler started: RSS every 2h, send_updates every 5min")
+
+    for job in scheduler.get_jobs():
+        logger.info("[Scheduler] Job: %s | next run: %s", job.id, job.next_run_time)
 
     # Run first parse immediately
     asyncio.create_task(scheduled_parse())
