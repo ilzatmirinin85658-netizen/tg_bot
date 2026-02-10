@@ -1,7 +1,7 @@
 import json
 import logging
 
-import google.generativeai as genai
+from google import genai
 
 from app.core.config import settings
 
@@ -18,16 +18,18 @@ SYSTEM_PROMPT = (
 
 class AIAnalyzer:
     def __init__(self) -> None:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel(
-            "gemini-2.0-flash",
-            system_instruction=SYSTEM_PROMPT,
-        )
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     async def analyze_text(self, title: str, text: str) -> dict:
         prompt = f"Заголовок: {title}\n\nТекст: {text}"
         try:
-            response = await self.model.generate_content_async(prompt)
+            response = await self.client.aio.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                ),
+            )
             raw = response.text.strip()
             # Gemini иногда оборачивает JSON в ```json ... ```
             if raw.startswith("```"):
