@@ -12,6 +12,9 @@ router = Router()
 
 RSS_URL = "https://habr.com/ru/rss/hubs/python/"
 
+# In-memory activity flag (survives until redeploy)
+bot_active = True
+
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message):
@@ -26,6 +29,22 @@ async def cmd_start(message: types.Message):
         logger.error("Failed to upsert user %s: %s", chat_id, exc)
 
     await message.answer("Бот работает! Жду новостей...")
+
+
+@router.message(Command("sleep"))
+async def cmd_sleep(message: types.Message):
+    global bot_active
+    bot_active = False
+    logger.info("Bot set to SLEEP by chat_id=%s", message.chat.id)
+    await message.answer("\U0001f4a4 Ушел в спящий режим. Парсинг и рассылка приостановлены. GN!")
+
+
+@router.message(Command("wake"))
+async def cmd_wake(message: types.Message):
+    global bot_active
+    bot_active = True
+    logger.info("Bot set to WAKE by chat_id=%s", message.chat.id)
+    await message.answer("\u2600\ufe0f GM! Возвращаюсь к работе.")
 
 
 @router.message(Command("check_now"))
