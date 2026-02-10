@@ -42,9 +42,15 @@ async def fetch_and_process_rss(url: str) -> int:
         score = result.get("score", 0)
         analyzed += 1
 
+        # If AI failed (score=0, no summary) — skip, don't save.
+        # The article will be retried on the next run.
+        if score == 0 and result.get("summary") is None:
+            logger.error("AI failed for url: %s — skipping, will retry later", link)
+            continue
+
         is_good = score >= 7
 
-        # ALWAYS save to DB — good or bad
+        # Save to DB — good or bad (but only real AI results, not errors)
         try:
             resp = db.table("articles").insert({
                 "url": link,
