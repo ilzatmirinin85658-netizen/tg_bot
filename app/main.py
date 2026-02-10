@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from app.bot.handlers import active_chats, router
+from app.bot.handlers import router
 from app.core.config import settings
 from app.db.supabase import get_supabase_client
 from app.services.ai_service import AIAnalyzer
@@ -41,13 +41,17 @@ async def scheduled_parse():
 
 
 async def send_updates():
-    """Send unsent articles to Telegram."""
-    if not active_chats:
-        logger.warning("send_updates: no active chats — send /start to the bot first")
-        return
-
+    """Send unsent articles to all registered users."""
     try:
         db = get_supabase_client()
+
+        # Get all registered users
+        users = db.table("users").select("id").execute()
+        if not users.data:
+            logger.warning("send_updates: no registered users")
+            return
+
+        # Get unsent articles
         rows = (
             db.table("articles")
             .select("*")
@@ -66,7 +70,8 @@ async def send_updates():
                 f"Score: {article.get('ai_score', '?')}/10\n"
                 f"{article['url']}"
             )
-            for chat_id in active_chats:
+            for user in users.data:
+                chat_id = user["id"]
                 try:
                     await bot.send_message(chat_id, text, parse_mode="HTML")
                     logger.info("Sent article to chat %s: %s", chat_id, article["title"])

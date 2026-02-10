@@ -7,3 +7,8 @@ create table articles (
     is_sent    boolean default false,
     created_at timestamptz default now()
 );
+
+create table users (
+    id         int8 primary key,  -- telegram user id
+    created_at timestamptz default now()
+);
