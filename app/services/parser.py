@@ -8,23 +8,30 @@ from app.services.ai_service import AIAnalyzer
 logger = logging.getLogger(__name__)
 analyzer = AIAnalyzer()
 
+MAX_NEW_PER_RUN = 3
+
 
 async def fetch_and_process_rss(url: str) -> int:
-    """Parse RSS feed, analyze new articles with AI, save good ones to DB.
+    """Parse RSS feed, analyze new articles with AI, save ALL to DB.
 
-    Returns the number of articles saved.
+    Returns the number of good articles (score >= 7) found.
     """
     feed = feedparser.parse(url)
     db = get_supabase_client()
-    saved = 0
+    good_count = 0
+    analyzed = 0
 
     for entry in feed.entries:
+        if analyzed >= MAX_NEW_PER_RUN:
+            logger.info("Hit limit of %d new articles per run, stopping", MAX_NEW_PER_RUN)
+            break
+
         link = entry.get("link", "")
         title = entry.get("title", "")
         if not link or not title:
             continue
 
-        # Check if article already exists
+        # Check if article already exists in DB
         existing = db.table("articles").select("id").eq("url", link).execute()
         if existing.data:
             continue
@@ -33,17 +40,32 @@ async def fetch_and_process_rss(url: str) -> int:
         summary_text = entry.get("summary", "")
         result = await analyzer.analyze_text(title, summary_text)
         score = result.get("score", 0)
+        analyzed += 1
 
-        if score > 7:
-            db.table("articles").insert({
+        is_good = score >= 7
+
+        # ALWAYS save to DB — good or bad
+        try:
+            resp = db.table("articles").insert({
                 "url": link,
                 "title": title,
                 "summary": result.get("summary"),
                 "ai_score": score,
-                "is_sent": False,
+                "is_sent": not is_good,  # bad articles marked as "sent" to skip them
             }).execute()
-            saved += 1
-            logger.info("Saved article: %s (score=%d)", title, score)
+            logger.info(
+                "DB insert OK: title=%s score=%d is_good=%s resp_count=%d",
+                title[:60], score, is_good, len(resp.data),
+            )
+        except Exception as exc:
+            logger.error("DB insert FAILED: url=%s error=%s", link, exc)
+            continue
 
-    logger.info("RSS processed: %s — saved %d new articles", url, saved)
-    return saved
+        if is_good:
+            good_count += 1
+
+    logger.info(
+        "RSS done: %s — analyzed=%d, good=%d",
+        url, analyzed, good_count,
+    )
+    return good_count
