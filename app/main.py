@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+import app.bot.handlers as handlers
 from app.bot.handlers import router
 from app.core.config import settings
 from app.db.supabase import get_supabase_client
@@ -32,16 +33,24 @@ scheduler = AsyncIOScheduler()
 
 async def scheduled_parse():
     """Periodic RSS parsing task."""
+    if not handlers.bot_active:
+        logger.info("[Scheduler] Bot is sleeping, skipping parse")
+        return
+
     logger.info("[Scheduler] \U0001f552 Запуск парсинга новостей...")
     try:
         saved = await fetch_and_process_rss(RSS_URL)
-        logger.info("RSS parse done, saved %s articles", saved)
+        logger.info("[Scheduler] Парсинг завершен: найдено %s новых статей. Следующий запуск через 2 часа.", saved)
     except Exception as exc:
-        logger.error("RSS parse error: %s", exc)
+        logger.error("[Scheduler] RSS parse error: %s", exc)
 
 
 async def send_updates():
     """Send unsent articles to all registered users."""
+    if not handlers.bot_active:
+        logger.info("[Scheduler] Bot is sleeping, skipping send")
+        return
+
     logger.info("[Scheduler] \U0001f4e4 Запуск рассылки (проверка очереди)...")
     try:
         db = get_supabase_client()
@@ -49,7 +58,7 @@ async def send_updates():
         # Get all registered users
         users = db.table("users").select("id").execute()
         if not users.data:
-            logger.warning("send_updates: no registered users")
+            logger.warning("[Sender] Нет зарегистрированных пользователей")
             return
 
         # Get unsent articles
@@ -61,9 +70,10 @@ async def send_updates():
             .execute()
         )
         if not rows.data:
-            logger.info("send_updates: no unsent articles")
+            logger.info("[Sender] Очередь пуста, жду 5 минут.")
             return
 
+        sent_count = 0
         for article in rows.data:
             text = (
                 f"<b>{article['title']}</b>\n\n"
@@ -75,15 +85,17 @@ async def send_updates():
                 chat_id = user["id"]
                 try:
                     await bot.send_message(chat_id, text, parse_mode="HTML")
-                    logger.info("Sent article to chat %s: %s", chat_id, article["title"])
                 except Exception as exc:
                     logger.error("Failed to send to chat %s: %s", chat_id, exc)
 
             db.table("articles").update({"is_sent": True}).eq(
                 "id", article["id"]
             ).execute()
+            sent_count += 1
+
+        logger.info("[Sender] Отправлено %d статей.", sent_count)
     except Exception as exc:
-        logger.error("send_updates error: %s", exc)
+        logger.error("[Sender] error: %s", exc)
 
 
 @asynccontextmanager
@@ -105,8 +117,13 @@ async def lifespan(application: FastAPI):
     for job in scheduler.get_jobs():
         logger.info("[Scheduler] Job: %s | next run: %s", job.id, job.next_run_time)
 
-    # Run first parse immediately
-    asyncio.create_task(scheduled_parse())
+    # Delayed first parse (1 min) so the system has time to warm up
+    async def delayed_first_parse():
+        logger.info("[Scheduler] Первый парсинг запланирован через 1 минуту...")
+        await asyncio.sleep(60)
+        await scheduled_parse()
+
+    asyncio.create_task(delayed_first_parse())
 
     yield
 
