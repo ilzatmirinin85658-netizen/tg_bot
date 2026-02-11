@@ -7,13 +7,35 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "Ты эксперт по методологии Vibecoding и AI-разработке. "
-    "Оцени статью. Если она полезна для изучения быстрой разработки с ИИ, "
-    "дай ей оценку от 1 до 10. Если оценка выше 7, напиши краткую выжимку "
-    "(summary) на русском языке (макс 3 предложения). "
-    'Верни JSON: {"score": int, "summary": str | null}'
-)
+SYSTEM_PROMPT = """\
+Ты — аналитик и эксперт по методологии Vibecoding (быстрая разработка с помощью ИИ).
+Твоя задача: находить материалы, которые помогают писать код быстрее, эффективнее и в состоянии потока.
+
+ЧТО МЫ ИЩЕМ (High Score 8-10):
+1. Использование IDE нового поколения (Cursor, Windsurf, Replit, IDX).
+2. Паттерны взаимодействия с LLM для кодинга (Chain of Thought, архитектурные промпты).
+3. Инструменты no-code / low-code, которые генерируют чистый код (v0, Lovable).
+4. Реальные кейсы: "Как я создал приложение за выходные с помощью Claude Dev".
+
+ЧТО ОТСЕИВАЕМ (Low Score):
+1. Обычные новости IT (релизы библиотек без AI-контекста).
+2. Корпоративные новости, политика компаний, скандалы.
+3. Абстрактные рассуждения о будущем AGI (нужна практика).
+
+ИНСТРУКЦИЯ ПО ОФОРМЛЕНИЮ:
+1. "meaningful_title": Придумай емкий, информативный заголовок на русском языке.
+   - Цель: передать СУТЬ статьи, которой иногда нет в оригинальном заголовке.
+   - Стиль: спокойный, профессиональный, четкий, но не слишком занудный и с кучей канцеляризмов.
+   - Пример: Вместо "Шок! Cursor обновился" напиши "Cursor добавил режим Composer для правки нескольких файлов".
+
+2. "summary": Качественная выжимка материала.
+   - Не ограничивай себя, пиши столько, сколько нужно для раскрытия сути, но не больше 4 предложений (без "воды").
+   - Опиши: какую проблему решают, какие инструменты используются, в чем конкретный выигрыш в скорости/удобстве.
+   - Это должно быть полезно читать само по себе.
+
+ВЕРНИ JSON:
+{"score": int, "meaningful_title": str, "summary": str}\
+"""
 
 FALLBACK_MODEL = "models/gemini-2.0-flash"
 
@@ -63,17 +85,16 @@ class AIAnalyzer:
                     "Лимиты %s исчерпаны, переключаюсь на резерв (%s)...",
                     primary, FALLBACK_MODEL,
                 )
-                # Try fallback model
                 try:
                     raw = await self._generate(FALLBACK_MODEL, prompt)
                 except Exception as fallback_exc:
                     logger.error(
                         "Fallback model %s also failed: %s", FALLBACK_MODEL, fallback_exc,
                     )
-                    return {"score": 0, "summary": None}
+                    return {"score": 0, "summary": None, "meaningful_title": None}
             else:
                 logger.error("Gemini error (model=%s): %s", primary, exc)
-                return {"score": 0, "summary": None}
+                return {"score": 0, "summary": None, "meaningful_title": None}
 
         # Parse JSON response
         try:
@@ -82,4 +103,4 @@ class AIAnalyzer:
             return json.loads(raw)
         except (json.JSONDecodeError, Exception) as exc:
             logger.error("Gemini JSON parse error: %s | raw=%s", exc, raw[:200])
-            return {"score": 0, "summary": None}
+            return {"score": 0, "summary": None, "meaningful_title": None}

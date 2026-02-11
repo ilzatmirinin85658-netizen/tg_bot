@@ -43,6 +43,13 @@ async def scheduled_parse():
         logger.info("[Scheduler] Парсинг завершен: найдено %s новых статей. Следующий запуск через 2 часа.", saved)
     except Exception as exc:
         logger.error("[Scheduler] RSS parse error: %s", exc)
+        try:
+            await bot.send_message(
+                settings.ADMIN_ID,
+                f"\u26a0\ufe0f [Parser] \u041e\u0448\u0438\u0431\u043a\u0430 \u043f\u0430\u0440\u0441\u0438\u043d\u0433\u0430: {exc}",
+            )
+        except Exception:
+            pass
 
 
 async def send_updates():
@@ -75,11 +82,14 @@ async def send_updates():
 
         sent_count = 0
         for article in rows.data:
+            meaningful = article.get("meaningful_title") or article["title"]
+            summary = article.get("summary") or ""
+            original_title = article["title"]
+            url = article["url"]
             text = (
-                f"<b>{article['title']}</b>\n\n"
-                f"{article.get('summary') or ''}\n\n"
-                f"Score: {article.get('ai_score', '?')}/10\n"
-                f"{article['url']}"
+                f"<b>{meaningful}</b>\n\n"
+                f"\U0001f4d1 <b>Summary</b>\n{summary}\n\n"
+                f'<a href="{url}">\u041e\u0440\u0438\u0433\u0438\u043d\u0430\u043b: {original_title}</a>'
             )
             for user in users.data:
                 chat_id = user["id"]
@@ -96,6 +106,13 @@ async def send_updates():
         logger.info("[Sender] Отправлено %d статей.", sent_count)
     except Exception as exc:
         logger.error("[Sender] error: %s", exc)
+        try:
+            await bot.send_message(
+                settings.ADMIN_ID,
+                f"\u26a0\ufe0f [Sender] \u041e\u0448\u0438\u0431\u043a\u0430: {exc}",
+            )
+        except Exception:
+            pass
 
 
 @asynccontextmanager

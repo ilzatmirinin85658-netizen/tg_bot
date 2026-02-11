@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     DB_PASSWORD: str
     GEMINI_API_KEY: str
     GEMINI_MODEL: str = "models/gemini-2.5-flash"
+    ADMIN_ID: int
 
 
 settings = Settings()
