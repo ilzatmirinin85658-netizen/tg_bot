@@ -12,7 +12,11 @@ MAX_NEW_PER_RUN = 3
 
 
 async def fetch_and_process_rss(url: str) -> int:
-    """Parse RSS feed, analyze new articles with AI, save ALL to DB.
+    """Parse RSS feed, analyze new articles with AI, save to DB.
+
+    Good articles (score >= 7) are saved with full AI data and is_sent=False.
+    Low-score articles are saved with meaningful_title/summary = NULL, is_sent=True.
+    Parser NEVER sends Telegram messages — only writes to the database.
 
     Returns the number of good articles (score >= 7) found.
     """
@@ -50,16 +54,17 @@ async def fetch_and_process_rss(url: str) -> int:
 
         is_good = score >= 7
 
-        # Save to DB — good or bad (but only real AI results, not errors)
+        # Save to DB: good articles keep full AI data, low-score get NULLs
+        row = {
+            "url": link,
+            "title": title,
+            "meaningful_title": result.get("meaningful_title") if is_good else None,
+            "summary": result.get("summary") if is_good else None,
+            "ai_score": score,
+            "is_sent": not is_good,  # low-score marked "sent" so Publisher skips them
+        }
         try:
-            resp = db.table("articles").insert({
-                "url": link,
-                "title": title,
-                "meaningful_title": result.get("meaningful_title"),
-                "summary": result.get("summary"),
-                "ai_score": score,
-                "is_sent": not is_good,  # bad articles marked as "sent" to skip them
-            }).execute()
+            resp = db.table("articles").insert(row).execute()
             logger.info(
                 "DB insert OK: title=%s score=%d is_good=%s resp_count=%d",
                 title[:60], score, is_good, len(resp.data),

@@ -9,10 +9,10 @@ from pydantic import BaseModel
 
 import app.bot.handlers as handlers
 from app.bot.handlers import router
+from app.bot.scheduler import publish_one
 from app.core.config import settings
-from app.db.supabase import get_supabase_client
 from app.services.ai_service import AIAnalyzer
-from app.services.parser import fetch_and_process_rss
+from app.services.parser import fetch_and_process_rss  # noqa: used in scheduled_parse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,79 +37,38 @@ async def scheduled_parse():
         logger.info("[Scheduler] Bot is sleeping, skipping parse")
         return
 
-    logger.info("[Scheduler] \U0001f552 Запуск парсинга новостей...")
+    logger.info("[Hunter] \U0001f552 Запуск парсинга новостей...")
     try:
         saved = await fetch_and_process_rss(RSS_URL)
-        logger.info("[Scheduler] Парсинг завершен: найдено %s новых статей. Следующий запуск через 2 часа.", saved)
+        logger.info("[Hunter] Парсинг завершен: найдено %s новых статей. Следующий запуск через 30 мин.", saved)
     except Exception as exc:
-        logger.error("[Scheduler] RSS parse error: %s", exc)
+        logger.error("[Hunter] RSS parse error: %s", exc)
         try:
             await bot.send_message(
                 settings.ADMIN_ID,
-                f"\u26a0\ufe0f [Parser] \u041e\u0448\u0438\u0431\u043a\u0430 \u043f\u0430\u0440\u0441\u0438\u043d\u0433\u0430: {exc}",
+                f"\u26a0\ufe0f [Hunter] \u041e\u0448\u0438\u0431\u043a\u0430 \u043f\u0430\u0440\u0441\u0438\u043d\u0433\u0430: {exc}",
             )
         except Exception:
             pass
 
 
 async def send_updates():
-    """Send unsent articles to all registered users."""
+    """Publisher: send ONE unsent article to all users."""
     if not handlers.bot_active:
-        logger.info("[Scheduler] Bot is sleeping, skipping send")
+        logger.info("[Publisher] Bot is sleeping, skipping send")
         return
 
-    logger.info("[Scheduler] \U0001f4e4 Запуск рассылки (проверка очереди)...")
+    logger.info("[Publisher] \U0001f4e4 \u041f\u0440\u043e\u0432\u0435\u0440\u044f\u044e \u043e\u0447\u0435\u0440\u0435\u0434\u044c \u043f\u0443\u0431\u043b\u0438\u043a\u0430\u0446\u0438\u0439...")
     try:
-        db = get_supabase_client()
-
-        # Get all registered users
-        users = db.table("users").select("id").execute()
-        if not users.data:
-            logger.warning("[Sender] Нет зарегистрированных пользователей")
-            return
-
-        # Get unsent articles
-        rows = (
-            db.table("articles")
-            .select("*")
-            .eq("is_sent", False)
-            .order("created_at")
-            .execute()
-        )
-        if not rows.data:
-            logger.info("[Sender] Очередь пуста, жду 5 минут.")
-            return
-
-        sent_count = 0
-        for article in rows.data:
-            meaningful = article.get("meaningful_title") or article["title"]
-            summary = article.get("summary") or ""
-            original_title = article["title"]
-            url = article["url"]
-            text = (
-                f"<b>{meaningful}</b>\n\n"
-                f"\U0001f4d1 <b>Summary</b>\n{summary}\n\n"
-                f'<a href="{url}">\u041e\u0440\u0438\u0433\u0438\u043d\u0430\u043b: {original_title}</a>'
-            )
-            for user in users.data:
-                chat_id = user["id"]
-                try:
-                    await bot.send_message(chat_id, text, parse_mode="HTML")
-                except Exception as exc:
-                    logger.error("Failed to send to chat %s: %s", chat_id, exc)
-
-            db.table("articles").update({"is_sent": True}).eq(
-                "id", article["id"]
-            ).execute()
-            sent_count += 1
-
-        logger.info("[Sender] Отправлено %d статей.", sent_count)
+        published = await publish_one(bot)
+        if published:
+            logger.info("[Publisher] \u0413\u043e\u0442\u043e\u0432\u043e. \u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f \u043f\u0443\u0431\u043b\u0438\u043a\u0430\u0446\u0438\u044f \u0447\u0435\u0440\u0435\u0437 4 \u0447\u0430\u0441\u0430.")
     except Exception as exc:
-        logger.error("[Sender] error: %s", exc)
+        logger.error("[Publisher] error: %s", exc)
         try:
             await bot.send_message(
                 settings.ADMIN_ID,
-                f"\u26a0\ufe0f [Sender] \u041e\u0448\u0438\u0431\u043a\u0430: {exc}",
+                f"\u26a0\ufe0f [Publisher] \u041e\u0448\u0438\u0431\u043a\u0430: {exc}",
             )
         except Exception:
             pass
@@ -126,10 +85,10 @@ async def lifespan(application: FastAPI):
     logger.info("Polling started")
 
     # Configure scheduler
-    scheduler.add_job(scheduled_parse, "interval", hours=2, id="rss_parse")
-    scheduler.add_job(send_updates, "interval", minutes=5, id="send_updates")
+    scheduler.add_job(scheduled_parse, "interval", minutes=30, id="rss_parse")
+    scheduler.add_job(send_updates, "interval", hours=4, id="send_updates")
     scheduler.start()
-    logger.info("Scheduler started: RSS every 2h, send_updates every 5min")
+    logger.info("Scheduler started: Hunter every 30min, Publisher every 4h")
 
     for job in scheduler.get_jobs():
         logger.info("[Scheduler] Job: %s | next run: %s", job.id, job.next_run_time)
