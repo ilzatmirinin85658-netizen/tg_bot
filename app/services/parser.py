@@ -55,6 +55,7 @@ async def fetch_and_process_rss(url: str) -> int:
             resp = db.table("articles").insert({
                 "url": link,
                 "title": title,
+                "meaningful_title": result.get("meaningful_title"),
                 "summary": result.get("summary"),
                 "ai_score": score,
                 "is_sent": not is_good,  # bad articles marked as "sent" to skip them
