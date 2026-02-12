@@ -21,18 +21,6 @@ def _is_admin(message: types.Message) -> bool:
     return message.from_user and message.from_user.id == settings.ADMIN_ID
 
 
-def _format_article(article: dict) -> str:
-    meaningful = article.get("meaningful_title") or article["title"]
-    summary = article.get("summary") or ""
-    original_title = article["title"]
-    url = article["url"]
-    return (
-        f"<b>{meaningful}</b>\n\n"
-        f"\U0001f4d1 <b>Summary</b>\n{summary}\n\n"
-        f'\U0001f517 <a href="{url}">\u041e\u0440\u0438\u0433\u0438\u043d\u0430\u043b: {original_title}</a>'
-    )
-
-
 @router.message(CommandStart())
 async def cmd_start(message: types.Message):
     chat_id = message.chat.id
@@ -72,6 +60,9 @@ async def cmd_wake(message: types.Message):
 
 @router.message(Command("check_now"))
 async def cmd_check_now(message: types.Message):
+    """Admin-only: trigger the Hunter (parser) immediately.
+    Does NOT send articles — Publisher handles that on its own schedule.
+    """
     if not _is_admin(message):
         await message.answer("\u041d\u0435\u0442 \u043f\u0440\u0430\u0432 \u0434\u043b\u044f \u044d\u0442\u043e\u0439 \u043a\u043e\u043c\u0430\u043d\u0434\u044b.")
         return
@@ -85,27 +76,7 @@ async def cmd_check_now(message: types.Message):
         await message.answer(f"\u041e\u0448\u0438\u0431\u043a\u0430 \u043f\u0440\u0438 \u043f\u0430\u0440\u0441\u0438\u043d\u0433\u0435: {exc}")
         return
 
-    if saved > 0:
-        bot = message.bot
-        db = get_supabase_client()
-        users = db.table("users").select("id").execute()
-        rows = (
-            db.table("articles")
-            .select("*")
-            .eq("is_sent", False)
-            .order("created_at")
-            .execute()
-        )
-        for article in rows.data:
-            text = _format_article(article)
-            for user in users.data:
-                try:
-                    await bot.send_message(user["id"], text, parse_mode="HTML")
-                except Exception as exc:
-                    logger.error("Failed to send to %s: %s", user["id"], exc)
-
-            db.table("articles").update({"is_sent": True}).eq(
-                "id", article["id"]
-            ).execute()
-
-    await message.answer(f"\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430. \u041d\u0430\u0439\u0434\u0435\u043d\u043e \u043d\u043e\u0432\u044b\u0445 \u0441\u0442\u0430\u0442\u0435\u0439: {saved}")
+    await message.answer(
+        f"\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430. \u041d\u043e\u0432\u044b\u0445 \u0441\u0442\u0430\u0442\u0435\u0439 \u0441 score \u2265 7: {saved}\n"
+        "\u041f\u0443\u0431\u043b\u0438\u043a\u0430\u0446\u0438\u044f \u043f\u043e \u0440\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u044e (Publisher \u043a\u0430\u0436\u0434\u044b\u0435 4\u0447)."
+    )
