@@ -33,13 +33,13 @@ async def publish_one(bot: Bot) -> bool:
         logger.warning("[Publisher] \u041d\u0435\u0442 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043e\u0432\u0430\u043d\u043d\u044b\u0445 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u0439")
         return False
 
-    # Get ONE oldest unsent article with score >= 7
+    # FIFO: oldest unsent article with score >= 7 (created_at ASC)
     rows = (
         db.table("articles")
         .select("*")
         .eq("is_sent", False)
         .gte("ai_score", 7)
-        .order("created_at")
+        .order("created_at", desc=False)
         .limit(1)
         .execute()
     )

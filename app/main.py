@@ -40,7 +40,7 @@ async def scheduled_parse():
     logger.info("[Hunter] \U0001f552 Запуск парсинга новостей...")
     try:
         saved = await fetch_and_process_rss(RSS_URL)
-        logger.info("[Hunter] Парсинг завершен: найдено %s новых статей. Следующий запуск через 30 мин.", saved)
+        logger.info("[Hunter] Парсинг завершен: найдено %s новых статей. Следующий запуск через 1 час.", saved)
     except Exception as exc:
         logger.error("[Hunter] RSS parse error: %s", exc)
         try:
@@ -85,21 +85,24 @@ async def lifespan(application: FastAPI):
     logger.info("Polling started")
 
     # Configure scheduler
-    scheduler.add_job(scheduled_parse, "interval", minutes=30, id="rss_parse")
+    scheduler.add_job(scheduled_parse, "interval", hours=1, id="rss_parse")
     scheduler.add_job(send_updates, "interval", hours=4, id="send_updates")
     scheduler.start()
-    logger.info("Scheduler started: Hunter every 30min, Publisher every 4h")
+    logger.info("Scheduler started: Hunter every 1h, Publisher every 4h")
 
     for job in scheduler.get_jobs():
         logger.info("[Scheduler] Job: %s | next run: %s", job.id, job.next_run_time)
 
-    # Delayed first parse (1 min) so the system has time to warm up
-    async def delayed_first_parse():
-        logger.info("[Scheduler] Первый парсинг запланирован через 1 минуту...")
+    # At startup: immediately check if there are queued articles to publish
+    async def startup_tasks():
+        logger.info("[Startup] Проверяю очередь на неотправленные статьи...")
+        await send_updates()
+        # Then delayed first parse (1 min) so the system has time to warm up
+        logger.info("[Startup] Первый парсинг запланирован через 1 минуту...")
         await asyncio.sleep(60)
         await scheduled_parse()
 
-    asyncio.create_task(delayed_first_parse())
+    asyncio.create_task(startup_tasks())
 
     yield
 
